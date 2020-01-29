@@ -1,0 +1,89 @@
+import os
+import sys
+
+import numpy as np
+
+import tensorflow as tf
+from tensorflow import keras
+
+# Change this with the directory where you cloned the imgdetect-utils repo
+basedir = os.path.join(os.path.expanduser('~'), 'git_tree', 'imgdetect-utils')
+sys.path.append(os.path.join(basedir))
+
+from src.image_helpers import plot_images_grid, create_dataset_files
+from src.train_helpers import load_data, plot_results, export_model
+
+# The Tensorflow model and properties file will be stored here
+tf_model_dir = os.path.join(basedir, 'models', 'ir', 'tensorflow')
+tf_model_file = os.path.join(tf_model_dir, 'ir.pb')
+tf_properties_file = os.path.join(tf_model_dir, 'ir.json')
+
+# Base directory that contains your training images and dataset files
+dataset_base_dir = os.path.join(basedir, 'datasets', 'ir')
+dataset_dir = os.path.join(dataset_base_dir, 'data')
+
+# Store your thermal camera images here
+img_dir = os.path.join(dataset_base_dir, 'images')
+
+# Size of the input images
+input_size = (24, 32)
+
+#Create model directories
+os.makedirs(tf_model_dir, mode=0o775, exist_ok=True)
+
+#Creating dataset files from available images
+dataset_files = create_dataset_files(img_dir, dataset_dir,
+                                     split_size=1000,
+                                     num_threads=1,
+                                     resize=input_size)
+dataset_files
+
+#OR Load existing dataset files 
+dataset_files = [os.path.join(dataset_dir, f)
+                 for f in os.listdir(dataset_dir)
+                 if os.path.isfile(os.path.join(dataset_dir, f))
+                 and f.endswith('.npz')]
+
+dataset_files
+
+#Get the training and test set randomly out of the dataset with a split of 70/30
+train_set, test_set, classes = load_data(*dataset_files, split_percentage=0.7)
+print('Loaded {} training images and {} test images. Classes: {}'.format(
+    train_set.shape[0], test_set.shape[0], classes))
+train_images = np.asarray([item[0] for item in train_set])
+train_labels = np.asarray([item[1] for item in train_set])
+test_images = np.asarray([item[0] for item in test_set])
+test_labels = np.asarray([item[1] for item in test_set])
+
+#Inspect first 25 images in training set
+plot_images_grid(images=train_images, labels=train_labels, classes=classes, rows=5, cols=5)
+
+#Declare the model
+model = keras.Sequential([
+    keras.layers.Flatten(input_shape=train_images[0].shape),
+    keras.layers.Dense(int(0.5 * train_images.shape[1] * train_images.shape[2]), activation=tf.nn.relu),
+    keras.layers.Dense(int(0.2 * train_images.shape[1] * train_images.shape[2]), activation=tf.nn.relu),
+    keras.layers.Dense(len(classes), activation=tf.nn.softmax)
+])
+
+#Compile the model
+model.compile(optimizer='adam',
+              loss='sparse_categorical_crossentropy',
+              metrics=['accuracy'])
+
+#Train the model
+model.fit(train_images, train_labels, epochs=3)
+
+#Evaluate accuracy against test set
+test_loss, test_acc = model.evaluate(test_images, test_labels)
+print('Test accuracy:', test_acc)
+
+#Make predictions against the test set
+predictions = model.predict(test_images)
+plot_results(images=test_images, labels=test_labels, classes=classes, predictions=predictions, rows=9, cols=4)
+
+#Export model as Tensorflow
+export_model(model, tf_model_file,
+             properties_file=tf_properties_file,
+             classes=classes,
+             input_size=input_size)
