@@ -15,6 +15,7 @@ client.connect((err, client) => {
 
 app.post('/hit', (req, res) => {
     var hit = req.body;
+    console.log('POST REQUEST');
     console.log(hit);
     if (!hit) return console.log('undefined hit')
 
